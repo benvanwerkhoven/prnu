@@ -36,8 +36,9 @@
 
 //function interfaces to prevent C++ garbling the kernel names
 extern "C" {
-	__global__ void computeMeanVertically(int h, int w, float* input);
-	__global__ void transpose(int h, int w, float* output, float* input);
+    __global__ void computeMeanVertically(int h, int w, float* input);
+    __global__ void transpose(int h, int w, float* output, float* input);
+    __global__ void computeMeanHorizontally(int h, int w, float* input);
 }
 
 
@@ -54,83 +55,83 @@ extern "C" {
 //#define block_size_y 1
 //#define block_size_y 256
 __global__ void computeMeanVertically(int h, int w, float* input) {
-	int j = threadIdx.x + blockIdx.x * block_size_x;
-	int ti = threadIdx.y;
-	int tj = threadIdx.x;
+    int j = threadIdx.x + blockIdx.x * block_size_x;
+    int ti = threadIdx.y;
+    int tj = threadIdx.x;
 
-	if (j < w) {
-		float sumEven = 0.0f;
-		float sumOdd = 0.0f;
+    if (j < w) {
+        float sumEven = 0.0f;
+        float sumOdd = 0.0f;
 
-		//iterate over vertical domain
-		for (int i = 2*ti; i < h-1; i += 2*block_size_y) {
-			sumEven += input[i*w+j];
-			sumOdd += input[(i+1)*w+j];
-		}
-		if (ti == 0 && h & 1) { //if h is odd
-			sumEven += input[(h-1)*w+j];
-		}
+        //iterate over vertical domain
+        for (int i = 2*ti; i < h-1; i += 2*block_size_y) {
+            sumEven += input[i*w+j];
+            sumOdd += input[(i+1)*w+j];
+        }
+        if (ti == 0 && h & 1) { //if h is odd
+            sumEven += input[(h-1)*w+j];
+        }
 
-		//write local sums into shared memory
-		__shared__ float shEven[block_size_y][block_size_x];
-		__shared__ float shOdd[block_size_y][block_size_x];
+        //write local sums into shared memory
+        __shared__ float shEven[block_size_y][block_size_x];
+        __shared__ float shOdd[block_size_y][block_size_x];
 
-		shEven[ti][tj] = sumEven;
-		shOdd[ti][tj] = sumOdd;
-		__syncthreads();
+        shEven[ti][tj] = sumEven;
+        shOdd[ti][tj] = sumOdd;
+        __syncthreads();
 
-		//reduce local sums
-		for (unsigned int s=block_size_y/2; s>0; s>>=1) {
-			if (ti < s) {
-				shEven[ti][tj] += shEven[ti + s][tj];
-				shOdd[ti][tj] += shOdd[ti + s][tj];
-			}
-			__syncthreads();
-		}
+        //reduce local sums
+        for (unsigned int s=block_size_y/2; s>0; s>>=1) {
+            if (ti < s) {
+                shEven[ti][tj] += shEven[ti + s][tj];
+                shOdd[ti][tj] += shOdd[ti + s][tj];
+            }
+            __syncthreads();
+        }
 
-		//compute means
-		float meanEven = shEven[0][tj] / ((h + 1) / 2);
-		float meanOdd = shOdd[0][tj] / (h / 2);
+        //compute means
+        float meanEven = shEven[0][tj] / ((h + 1) / 2);
+        float meanOdd = shOdd[0][tj] / (h / 2);
 
-		//iterate over vertical domain
-		for (int i = 2*ti; i < h-1; i += 2*block_size_y) {
-			input[i*w+j] -= meanEven;
-			input[(i+1)*w+j] -= meanOdd;
-		}
-		if (ti == 0 && h & 1) { //if h is odd
-			input[(h-1)*w+j] -= meanEven;
-		}
-	}
+        //iterate over vertical domain
+        for (int i = 2*ti; i < h-1; i += 2*block_size_y) {
+            input[i*w+j] -= meanEven;
+            input[(i+1)*w+j] -= meanOdd;
+        }
+        if (ti == 0 && h & 1) { //if h is odd
+            input[(h-1)*w+j] -= meanEven;
+        }
+    }
 }
 __global__ void computeMeanVertically_naive(int h, int w, float* input) {
-	int j = threadIdx.x + blockIdx.x * block_size_x;
+    int j = threadIdx.x + blockIdx.x * block_size_x;
 
-	if (j < w) {
-		float sumEven = 0.0f;
-		float sumOdd = 0.0f;
+    if (j < w) {
+        float sumEven = 0.0f;
+        float sumOdd = 0.0f;
 
-		//iterate over vertical domain
-		for (int i = 0; i < h-1; i += 2) {
-			sumEven += input[i*w+j];
-			sumOdd += input[(i+1)*w+j];
-		}
-		if (h & 1) { //if h is odd
-			sumEven += input[(h-1)*w+j];
-		}
+        //iterate over vertical domain
+        for (int i = 0; i < h-1; i += 2) {
+            sumEven += input[i*w+j];
+            sumOdd += input[(i+1)*w+j];
+        }
+        if (h & 1) { //if h is odd
+            sumEven += input[(h-1)*w+j];
+        }
 
-		//compute means
-		float meanEven = sumEven / ((h + 1) / 2);
-		float meanOdd = sumOdd / (h / 2);
+        //compute means
+        float meanEven = sumEven / ((h + 1) / 2);
+        float meanOdd = sumOdd / (h / 2);
 
-		//iterate over vertical domain
-		for (int i = 0; i < h-1; i += 2) {
-			input[i*w+j] -= meanEven;
-			input[(i+1)*w+j] -= meanOdd;
-		}
-		if (h & 1) { //if h is odd
-			input[(h-1)*w+j] -= meanEven;
-		}
-	}
+        //iterate over vertical domain
+        for (int i = 0; i < h-1; i += 2) {
+            input[i*w+j] -= meanEven;
+            input[(i+1)*w+j] -= meanOdd;
+        }
+        if (h & 1) { //if h is odd
+            input[(h-1)*w+j] -= meanEven;
+        }
+    }
 }
 
 
@@ -142,12 +143,12 @@ __global__ void computeMeanVertically_naive(int h, int w, float* input) {
  * gridDim.y = h / block_size_y  (ceiled)
  */
 __global__ void transpose(int h, int w, float* output, float* input) {
-	int i = threadIdx.y + blockIdx.y * block_size_y;
-	int j = threadIdx.x + blockIdx.x * block_size_x;
+    int i = threadIdx.y + blockIdx.y * block_size_y;
+    int j = threadIdx.x + blockIdx.x * block_size_x;
 
-	if (j < w && i < h) {
-		output[j*h+i] = input[i*w+j];
-	}
+    if (j < w && i < h) {
+        output[j*h+i] = input[i*w+j];
+    }
 }
 
 
@@ -155,27 +156,62 @@ __global__ void transpose(int h, int w, float* output, float* input) {
 
 
 
+/**
+ * Applies an in place zero mean filtering operation to each row in an image.
+ * First two mean values are computed, one for even and one for odd elements,
+ * for each row in the image. Then, the corresponding mean value is subtracted
+ * from each pixel value in the image.
+ *
+ * block_size_x power of 2
+ * block_size_y any
+ */
+__global__ void computeMeanHorizontally(int h, int w, float *input) {
+    int i = threadIdx.y + blockIdx.y * block_size_y;
+    int tj = threadIdx.x;
 
+    if (i < h) {
 
+        float sumEven = 0.0f;
+        float sumOdd = 0.0f;
+        for (int j = 2*tj; j < w - 1; j += 2*block_size_x) {
+            sumEven += input[i*w+j];
+            sumOdd += input[i*w+j + 1];
+        }
+        if (tj == 0 && w & 1) {    // if w is odd 
+            sumEven += input[i*w+(w-1)];
+        }
 
+        #if block_size_x > 1
+        int ti = threadIdx.y;
+        //write local sums into shared memory
+        __shared__ float shEven[block_size_y][block_size_x];
+        __shared__ float shOdd[block_size_y][block_size_x];
+        shEven[ti][tj] = sumEven;
+        shOdd[ti][tj] = sumOdd;
+        __syncthreads();
 
+        //reduce local sums
+        for (unsigned int s=block_size_x/2; s>0; s>>=1) {
+            if (tj < s) {
+                shEven[ti][tj] += shEven[ti][tj + s];
+                shOdd[ti][tj] += shOdd[ti][tj + s];
+            }
+            __syncthreads();
+        }
+        sumEven = shEven[ti][0];
+        sumOdd = shOdd[ti][0];
+        #endif
 
+        float meanEven = sumEven / ((w + 1) / 2);
+        float meanOdd = sumOdd / (w / 2);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        for (int j = 2*tj; j < w - 1; j += 2*block_size_x) {
+            input[i*w+j] -= meanEven;
+            input[i*w+j + 1] -= meanOdd;
+        }
+        if (tj == 0 && w & 1) {    // if w is odd 
+            input[i*w+(w-1)] -= meanEven;
+        }
+    }
+}
 
