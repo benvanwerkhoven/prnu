@@ -35,6 +35,14 @@
  * @version 0.1
  */
 
+#ifndef block_size_x
+#define block_size_x 256
+#endif
+
+#ifndef block_size_y
+#define block_size_y 1
+#endif
+
 //set the number and size of filters, also adjust max_border
 #define FILTERS 4
 #define FILTER_SIZES {3, 5, 7, 9}
@@ -48,8 +56,9 @@ extern "C" {
     __global__ void scaleWithVariances(int h, int w, float* output, float* input, float* varianceEstimates, float* variance);
     __global__ void toComplex(int h, int w, float* complex, float* input);
     __global__ void toReal(int h, int w, float* output, float* complex);
-    __global__ void computeVarianceZeroMean(float n, float* output, float *input);
+    __global__ void computeVarianceZeroMean(int n, float* output, float *input);
     __global__ void computeVarianceEstimates(int h, int w, float* varest, float* input);
+    __global__ void computeVarianceEstimates_naive(int h, int w, float* varest, float* input);
     __global__ void normalizeToReal(int h, int w, float* output, float* complex);
     __global__ void normalize(int h, int w, float* output, float* complex);
 }
@@ -146,25 +155,26 @@ __global__ void normalize(int h, int w, float* complex_out, float* complex_in) {
  * MAX_BORDER needs to be set accordingly.
  *
  */
-__constant__ int filter[FILTERS] = FILTER_SIZES;
-#define BLOCK_X 32
-#define BLOCK_Y 16
-__global__ void computeVarianceEstimates_opt(int h, int w, float* varest, float* input) {
+//#define block_size_x 32
+//#define block_size_y 16
+#ifndef reuse_computation
+#define reuse_computation 1
+#endif
+
+__global__ void computeVarianceEstimates(int h, int w, float* varest, float* input) {
     int ty = threadIdx.y;
     int tx = threadIdx.x;
-    int i = blockIdx.y * BLOCK_Y;
-    int j = blockIdx.x * BLOCK_X;
+    int i = blockIdx.y * block_size_y;
+    int j = blockIdx.x * block_size_x;
 
-    __shared__ float shinput[BLOCK_Y+2*MAX_BORDER][BLOCK_X+2*MAX_BORDER];
+    __shared__ float shinput[block_size_y+2*MAX_BORDER][block_size_x+2*MAX_BORDER];
     
     //the loading phase of the kernel, which writes 0.0f to shared memory if the index
     //is outside the input
-    int y;
-    int x;
-    int yEnd = BLOCK_Y+2*MAX_BORDER;
-    int xEnd = BLOCK_X+2*MAX_BORDER;
-    for (y=ty; y < yEnd; y+= BLOCK_Y) {
-        for (x=tx; x < xEnd; x+= BLOCK_X) {
+    int yEnd = block_size_y+2*MAX_BORDER;
+    int xEnd = block_size_x+2*MAX_BORDER;
+    for (int y=ty; y < yEnd; y+= block_size_y) {
+        for (int x=tx; x < xEnd; x+= block_size_x) {
             float in = 0.0f;
             int indexy = i+y-MAX_BORDER;
             int indexx = j+x-MAX_BORDER; 
@@ -178,8 +188,11 @@ __global__ void computeVarianceEstimates_opt(int h, int w, float* varest, float*
     }
     __syncthreads();
 
+    const int filter[FILTERS] = FILTER_SIZES;
     float res = FLT_MAX;
-    //perform filtering
+
+    #if reuse_computation == 0
+    //perform filtering without reusing the sum from smaller filters
     for (int f = 0; f < FILTERS; f++) {
         int filterSize = filter[f];
         int offset = MAX_BORDER-(filterSize/2);
@@ -196,7 +209,35 @@ __global__ void computeVarianceEstimates_opt(int h, int w, float* varest, float*
         //store minimum
         res = sum < res ? sum : res; 
     }
+
+    #elif reuse_computation == 1
+    //perform filtering while reusing the sum from smaller filters
+
+    //start from center pixel
+    float sum = shinput[ty+MAX_BORDER][tx+MAX_BORDER]; 
+
+    //add sides of the square filter to sum and store minimum average
+    for (int f = 0; f < FILTERS; f++) {
+        int filterSize = filter[f];
+        int offset = MAX_BORDER-(filterSize/2);
     
+        //top and bottom row
+        for (int fj=0; fj<filterSize; fj++) {
+            sum += shinput[ty+0+offset][tx+fj+offset];
+            sum += shinput[ty+filterSize-1+offset][tx+fj+offset];
+        }
+        //two sides (between top and bottom rows)
+        for (int fi=1; fi<filterSize-1; fi++) {
+            sum += shinput[ty+fi+offset][tx+0+offset]; 
+            sum += shinput[ty+fi+offset][tx+filterSize-1+offset]; 
+        }
+
+        //store minimum
+        float avg = sum / (filterSize*filterSize);
+        res = avg < res ? avg : res;
+    }
+    #endif
+
     //write output
     varest[(i+ty)*w+(j+tx)] = res;
 
@@ -205,13 +246,14 @@ __global__ void computeVarianceEstimates_opt(int h, int w, float* varest, float*
 /**
  * This method is a naive implementation of computeVarianceEstimates used for correctness checks
  */
-__global__ void computeVarianceEstimates(int h, int w, float* varest, float* input) {
+__global__ void computeVarianceEstimates_naive(int h, int w, float* varest, float* input) {
     int i = threadIdx.y + blockIdx.y * block_size_y;
     int j = threadIdx.x + blockIdx.x * block_size_x;
 
     float res = FLT_MAX;
     if (i < h && j < w) {
     
+    const int filter[FILTERS] = FILTER_SIZES;
     for (int f = 0; f < FILTERS; f++) {
         int filterSize = filter[f];
         int border = filterSize/2;
@@ -252,37 +294,39 @@ __global__ void computeVarianceEstimates(int h, int w, float* varest, float* inp
  * The implementation currently assumes only one thread block is used for the entire input array
  * 
  * In case of multiple thread blocks initialize output to zero and use atomic add or another kernel
+ *
+ * block_size_x power of 2
  */
-#define LARGETB 1024      //has to be a power of two because of reduce
-__global__ void computeVarianceZeroMean(float n, float* output, float *input) {
+__global__ void computeVarianceZeroMean(int n, float *output, float *input) {
 
+    int x = blockIdx.x * block_size_x + threadIdx.x;
     int ti = threadIdx.x;
-    __shared__ float shmem[LARGETB];
+    int step_size = block_size_x * gridDim.x;
 
-    if (ti < n) {
-
-        //compute thread-local sums
-        float sum = 0.0f;
-        for (int i=ti; i < n; i+=LARGETB) {
+    float sum = 0.0f;
+    if (x < n) {
+        //compute thread-local sums of squares
+        for (int i=x; i < n; i+=step_size) {
             sum += input[i]*input[i];
         }
-        
-        //store local sums in shared memory
-        shmem[ti] = sum;
-        __syncthreads();
-        
-        //reduce local sums
-        for (unsigned int s=LARGETB/2; s>0; s>>=1) {
-            if (ti < s) {
-                shmem[ti] += shmem[ti + s];
-            }
-            __syncthreads();
-        }
-        
-        //write result
-        if (ti == 0) {
-            output[0] = ( shmem[0] * n ) / ( n - 1 ); //in case of multiple threadblocks write back using atomicAdd
-        }
-
     }
+        
+    //store local sums in shared memory
+    __shared__ float shmem[block_size_x];
+    shmem[ti] = sum;
+    __syncthreads();
+        
+    //reduce local sums
+    for (unsigned int s=block_size_x/2; s>0; s>>=1) {
+        if (ti < s) {
+            shmem[ti] += shmem[ti + s];
+        }
+        __syncthreads();
+    }
+        
+    //write result
+    if (ti == 0) {
+        output[blockIdx.x] = ( shmem[0] * n ) / ( n - 1 ); //in case of multiple threadblocks write back using atomicAdd
+    }
+
 }

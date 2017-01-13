@@ -33,7 +33,6 @@ extern "C" {
     __global__ void findPeak(int h, int w, float *peakValue, float *peakValues, int *peakIndex, float *input);
     __device__ double my_atomicAdd(double* address, double val);
 
-
     __global__ void sumDoubles(double *output, double *input, int n);
     __global__ void maxlocFloats(int *output_loc, float *output_float, int *input_loc, float *input_float, int n);
 }
@@ -71,7 +70,7 @@ __global__ void toComplexAndFlip(int h, int w, float *y, float* input_y) {
 /**
  * Two-in-one kernel that puts x and y to Complex, but flips y
  */
-__global__ void toComplexAndFlip2(int h, int w, float* x, float *y, float *input_x, float* input_y) {
+__global__ void toComplexAndFlip2(int h, int w, float *x, float *y, float *input_x, float *input_y) {
     int i = threadIdx.y + blockIdx.y * block_size_y;
     int j = threadIdx.x + blockIdx.x * block_size_x;
 
