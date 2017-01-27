@@ -22,18 +22,9 @@
  * @author Ben van Werkhoven <b.vanwerkhoven@esciencecenter.nl>
  * @version 0.1
  */
-
-#ifndef block_size_x
-#define block_size_x 32
-#endif
-
-#ifndef block_size_y
-#define block_size_y 32
-#endif
-
 extern "C" {
-//    __global__ void grayscale(int h, int w, float* output, uchar3* input);
-    ;
+//    __kernel void grayscale(int h, int w, __global float* output, __global uchar3* input);
+    __kernel void grayscale(int h, int w, __global float* output, __global char* input);
 }
 
 /*
@@ -41,19 +32,19 @@ extern "C" {
  *
  * Bytes go in, floats come out, alpha is ignored
  *
- * gridDim.x = w / block_size_x  (ceiled)
- * gridDim.y = h / block_size_y  (ceiled)
+ * get_num_groups(0) = w / block_size_x  (ceiled)
+ * get_num_groups(1) = h / block_size_y  (ceiled)
  */
-//__global__ void grayscale(int h, int w, float* output, uchar3* input) {
+//__kernel void grayscale(int h, int w, __global float* output, __global uchar3* input) {
 __kernel void grayscale(int h, int w, __global float* output, __global char* input) {
 	int i = get_local_id(1) + get_group_id(1) * block_size_y;
 	int j = get_local_id(0) + get_group_id(0) * block_size_x;
 	
-    uchar4 *c3_input = (uchar3 *)input;
+    uchar3 *c3_input = (uchar3 *)input;
 
 	if (j < w && i < h) {
 
-		uchar4 c = c3_input[i*w+j];
+		uchar3 c = c3_input[i*w+j];
 
 //          float b = (float) input[(i*w+j) * 3 + 0] & 0xFFFF;
 //          float g = (float) input[(i*w+j) * 3 + 1] & 0xFFFF;
@@ -65,6 +56,7 @@ __kernel void grayscale(int h, int w, __global float* output, __global char* inp
 
 	}
 }
+
 
 
 

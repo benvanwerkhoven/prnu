@@ -25,11 +25,7 @@
 
 // Should be a power of two!!
 #ifndef block_size_x
-#define block_size_x 32
-#endif
-
-#ifndef block_size_y
-#define block_size_y 32
+#define block_size_x 1024
 #endif
 
 #ifndef vector
@@ -59,8 +55,8 @@ typedef struct __align__(64) { float s0; float s1; float s2; float s3;
 
 //function interfaces to prevent C++ garbling the kernel names
 extern "C" {
-    ;
-    ;
+    __kernel void sumSquared(__global double *output, __global float *x, int n);
+    __kernel void computeNCC(__global double *output, __global floatvector *x, __global floatvector *y,  int n);
 }
 
 
@@ -89,14 +85,14 @@ __kernel void sumSquared(__global double *output, __global float *x, int n) {
   
         //store local sums in shared memory
         shmem[ti] = sumsq;
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
 
         //reduce local sums
         for (unsigned int s=block_size_x/2; s>0; s>>=1) {
             if (ti < s) {
             shmem[ti] += shmem[ti + s];
             }
-            barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+            barrier(CLK_LOCAL_MEM_FENCE);
         }
 
         //write result
@@ -106,7 +102,7 @@ __kernel void sumSquared(__global double *output, __global float *x, int n) {
     }
 }
  
-__kernel void computeNCC(__global double *output, floatvector *x, floatvector *y,  int n) {
+__kernel void computeNCC(__global double *output, __global floatvector *x, __global floatvector *y,  int n) {
     int _x = get_group_id(0) * block_size_x + get_local_id(0);
     int ti = get_local_id(0);
     int step_size = get_num_groups(0) * block_size_x;
@@ -137,14 +133,14 @@ __kernel void computeNCC(__global double *output, floatvector *x, floatvector *y
         }
         //store local sums in shared memory
         shmem[ti] = sumxy;
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
         
         //reduce local sums
         for (unsigned int s=block_size_x/2; s>0; s>>=1) {
             if (ti < s) {
                 shmem[ti] += shmem[ti + s];
             }
-            barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+            barrier(CLK_LOCAL_MEM_FENCE);
         }
         
         //write result
@@ -153,5 +149,6 @@ __kernel void computeNCC(__global double *output, floatvector *x, floatvector *y
         }
     }
 }   
+
 
 

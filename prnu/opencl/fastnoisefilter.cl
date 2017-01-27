@@ -20,7 +20,7 @@
  *
  * "Improving source camera identification using a simplified total variation
  * based noise removal algorithm" by F. Gisolf et al. In: Digital Investigation,
- * Volume 10, Issue 3, October 2013, Pages 207–214
+ * Volume 10, Issue 3, October 2013, Pages 207-214
  *
  * To apply the complete filter call both convolveVertically() and convolveHorizontally()
  * on the input and store the extracted gradients separately. Normalize these gradients
@@ -32,19 +32,21 @@
  */
 
 #ifndef block_size_x
-#define block_size_x 32
+#define block_size_x 256
+#endif
+#ifndef block_size_y
+#define block_size_y 1
 #endif
 
-#ifndef block_size_y
-#define block_size_y 32
-#endif
  
 //function interfaces to prevent C++ garbling the kernel names
 extern "C" {
-	;
-	;
-	;
-    ;
+    __kernel void convolveVertically(int h, int w, __global float* output, __global float* input);
+    __kernel void convolveHorizontally(int h, int w, __global float* output, __global float* input);
+    __kernel void normalize(int h, int w, __global float* dxs, __global float* dys);
+    __kernel void zeroMem(int h, int w, __global float* array);
+    __kernel void normalized_gradient(int h, int w, __global float *output, __global float *input);
+    __kernel void gradient(int h, int w, __global float *output, __global float *input);
 }
 
 /**
@@ -53,26 +55,26 @@ extern "C" {
  * Takes centered differences for interior points.
  */
 __kernel void convolveVertically(int h, int w, __global float* output, __global float* input) {
-	int i = get_local_id(1) + get_group_id(1) * block_size_y;
-	int j = get_local_id(0) + get_group_id(0) * block_size_x;
+    int i = get_local_id(1) + get_group_id(1) * block_size_y;
+    int j = get_local_id(0) + get_group_id(0) * block_size_x;
 
-	if (j < w && i < h) {
+    if (j < w && i < h) {
 
-		float res = output[i*w+j];
+        float res = output[i*w+j];
 
-		if (i == 0) {
-			res += input[1*w+j] - input[0*w+j];
-		} 
-		else if (i == h-1) {
-			res += input[i*w+j] - input[(i-1)*w+j];
-		} 
-		else if (i > 0 && i < h-1) {
-			res += 0.5f * (input[(i+1)*w+j] - input[(i-1)*w+j]);
-		}
+        if (i == 0) {
+            res += input[1*w+j] - input[0*w+j];
+        } 
+        else if (i == h-1) {
+            res += input[i*w+j] - input[(i-1)*w+j];
+        } 
+        else if (i > 0 && i < h-1) {
+            res += 0.5f * (input[(i+1)*w+j] - input[(i-1)*w+j]);
+        }
 
-		output[i*w+j] = res;
+        output[i*w+j] = res;
 
-	}
+    }
 }
 
 /**
@@ -86,21 +88,21 @@ __kernel void convolveHorizontally(int h, int w, __global float* output, __globa
 
     if (i < h && j < w) {
 
-		float res = output[i*w+j];
+        float res = output[i*w+j];
 
-		if (j == 0) {
-			res += input[i*w+1] - input[i*w+0];
-		} 
-		else if (j == w-1) {
-			res += input[i*w+j] - input[i*w+j-1];
-		}
-		else if (j > 0 && j < w-1) {
-			res += 0.5f * (input[i*w+j+1] - input[i*w+j-1]);
-		}
+        if (j == 0) {
+            res += input[i*w+1] - input[i*w+0];
+        } 
+        else if (j == w-1) {
+            res += input[i*w+j] - input[i*w+j-1];
+        }
+        else if (j > 0 && j < w-1) {
+            res += 0.5f * (input[i*w+j+1] - input[i*w+j-1]);
+        }
 
-		output[i*w+j] = res;
+        output[i*w+j] = res;
 
-	}
+    }
 }
 
 /**
@@ -111,15 +113,15 @@ __kernel void normalize(int h, int w, __global float* dxs, __global float* dys) 
     int j = get_local_id(0) + get_group_id(0) * block_size_x;
 
     if (i < h && j < w) {
-		float dx = dxs[i*w+j];
-		float dy = dys[i*w+j];
+        float dx = dxs[i*w+j];
+        float dy = dys[i*w+j];
 
-		float norm = sqrt((dx * dx) + (dy * dy));
-		float scale = 1.0f / (1.0f + norm);
+        float norm = sqrt((dx * dx) + (dy * dy));
+        float scale = 1.0f / (1.0f + norm);
 
-		dxs[i*w+j] = scale * dx;
-		dys[i*w+j] = scale * dy;
-	}
+        dxs[i*w+j] = scale * dx;
+        dys[i*w+j] = scale * dy;
+    }
 }
 
 
@@ -134,8 +136,70 @@ __kernel void zeroMem(int h, int w, __global float* array) {
     int j = get_local_id(0) + get_group_id(0) * block_size_x;
 
     if (i < h && j < w) {
-		array[i*w+j] = 0.0f;
-	}
+        array[i*w+j] = 0.0f;
+    }
+}
+
+
+
+
+/*
+ * The following contains a simplified re-implementation by Ben (Jan 2017).
+ * Where the previously six kernel launches have been reduced to two.
+ */
+inline float horizontal_gradient(int h, int w, int i, int j, float *input) {
+    float res = 0.0f;
+    if (j == 0) {
+        res += input[i*w+1] - input[i*w+0];
+    }
+    else if (j == w-1) {
+        res += input[i*w+j] - input[i*w+j-1];
+    }
+    else {
+        res += 0.5f * (input[i*w+j+1] - input[i*w+j-1]);
+    }
+    return res;
+}
+
+inline float vertical_gradient(int h, int w, int i, int j, float *input) {
+   float res = 0.0f;
+    if (i == 0) {
+        res += input[1*w+j] - input[0*w+j];
+    }
+    else if (i == h-1) {
+        res += input[i*w+j] - input[(i-1)*w+j];
+    }
+    else {
+        res += 0.5f * (input[(i+1)*w+j] - input[(i-1)*w+j]);
+    }
+    return res;
+}
+
+__kernel void normalized_gradient(int h, int w, __global float *output, __global float *input) {
+    int i = get_local_id(1) + get_group_id(1) * block_size_y;
+    int j = get_local_id(0) + get_group_id(0) * block_size_x;
+
+    if (i < h && j < w) {
+        float dx = horizontal_gradient(h,w,i,j,input);
+        float dy = vertical_gradient(h,w,i,j,input);
+
+        float norm = sqrt((dx * dx) + (dy * dy));
+        float scale = 1.0f / (1.0f + norm);
+    
+        output[i*w+j] = scale * dx + scale * dy;
+    }
+}
+
+__kernel void gradient(int h, int w, __global float *output, __global float *input) {
+    int i = get_local_id(1) + get_group_id(1) * block_size_y;
+    int j = get_local_id(0) + get_group_id(0) * block_size_x;
+
+    if (i < h && j < w) {
+        float dx = horizontal_gradient(h,w,i,j,input);
+        float dy = vertical_gradient(h,w,i,j,input);
+
+        output[i*w+j] = dx + dy;
+    }
 }
 
 

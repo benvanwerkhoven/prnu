@@ -22,28 +22,22 @@
  * @version 0.1
  */
 
-#ifndef block_size_x
-#define block_size_x 32
-#endif
-
 #ifndef block_size_y
-#define block_size_y 32
+#define block_size_y 1
 #endif
 
 
 //function interfaces to prevent C++ garbling the kernel names
 extern "C" {
-    ;
-    ;
-    ;
-    ;
-    ;
-    ;
-    ;
+    __kernel void toComplex(int h, int w, __global float* x, __global float* input_x);
+    __kernel void toComplexAndFlip(int h, int w, __global float* y, __global float *input_y);
+    __kernel void toComplexAndFlip2(int h, int w, __global float* x, __global float* y, __global float* input_x, __global float *input_y);
+    __kernel void computeEnergy(int h, int w, __global double *energy, __global int *peakIndex, __global float *input);
+    __kernel void computeCrossCorr(int h, int w, __global float *c, __global float *x, __global float *y);
+    __kernel void findPeak(int h, int w, __global float *peakValues, __global int *peakIndex, __global float *input);
 
-
-    ;
-    ;
+    __kernel void sumDoubles(__global double *output, __global double *input, int n);
+    __kernel void maxlocFloats(__global int *output_loc, __global float *output_float, __global int *input_loc, __global float *input_float, int n);
 }
 
 
@@ -79,7 +73,7 @@ __kernel void toComplexAndFlip(int h, int w, __global float *y, __global float* 
 /**
  * Two-in-one kernel that puts x and y to Complex, but flips y
  */
-__kernel void toComplexAndFlip2(int h, int w, __global float* x, __global float *y, __global float *input_x, __global float* input_y) {
+__kernel void toComplexAndFlip2(int h, int w, __global float *x, __global float *y, __global float *input_x, __global float *input_y) {
     int i = get_local_id(1) + get_group_id(1) * block_size_y;
     int j = get_local_id(0) + get_group_id(0) * block_size_x;
 
@@ -95,7 +89,6 @@ __kernel void toComplexAndFlip2(int h, int w, __global float* x, __global float 
 
     }
 }
-
 
 
 /*
@@ -129,7 +122,7 @@ __kernel void computeCrossCorr(int h, int w, __global float *c, __global float *
 #ifndef block_size_x
 #define block_size_x 1024      //has to be a power of two because of reduce
 #endif
-__kernel void findPeak(int h, int w, __global float *peakValue, __global float *peakValues, __global int *peakIndex, __global float *input) {
+__kernel void findPeak(int h, int w, __global float *peakValues, __global int *peakIndex, __global float *input) {
 
     int x = get_group_id(0) * block_size_x + get_local_id(0);
     int ti = get_local_id(0);
@@ -143,7 +136,7 @@ __kernel void findPeak(int h, int w, __global float *peakValue, __global float *
     float val = 0.0f;
     int index = -1;
     for (int i=x; i < n; i+=step_size) {
-        val = fabs(input[i*2]); //input is a complex array, only using real value 
+        val = fabsf(input[i*2]); //input is a complex array, only using real value 
         if (val > max) {
             max = val;
             index = i;
@@ -153,7 +146,7 @@ __kernel void findPeak(int h, int w, __global float *peakValue, __global float *
     //store local sums in shared memory
     shmax[ti] = max;
     shind[ti] = index;
-    barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+    barrier(CLK_LOCAL_MEM_FENCE);
         
     //reduce local sums
     for (unsigned int s=block_size_x/2; s>0; s>>=1) {
@@ -165,16 +158,13 @@ __kernel void findPeak(int h, int w, __global float *peakValue, __global float *
                 shind[ti] = shind[ti + s];
             }
         }
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
     }
         
     //write result
     if (ti == 0) {
         peakValues[get_group_id(0)] = shmax[0];
         peakIndex[get_group_id(0)] = shind[0];
-        if (get_group_id(0) == 0) {
-            peakValue[0] = input[n*2-2]; //instead of using real peak use last real value
-        }
     }
 
 }
@@ -205,10 +195,10 @@ __kernel void computeEnergy(int h, int w, __global double *energy, __global int 
     int peak_y = peak_i / w;
     int peak_x = peak_i - (peak_y * w);
 
-    if (ti < n) {
+    double sum = 0.0f;
 
+    if (ti < n) {
         //compute thread-local sums
-        double sum = 0.0f;
         for (int i=x; i < n; i+=step_size) {
             int row = i / w;
             int col = i - (row*w);
@@ -223,52 +213,26 @@ __kernel void computeEnergy(int h, int w, __global double *energy, __global int 
                 sum += val * val;
             }
         }
-        
-        //store local sums in shared memory
-        shmem[ti] = sum;
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
-        
-        //reduce local sums
-        for (unsigned int s=block_size_x/2; s>0; s>>=1) {
-            if (ti < s) {
-                shmem[ti] += shmem[ti + s];
-            }
-            barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
-        }
-        
-        //write result
-        if (ti == 0) {
-            //use 1 thread block or multiple kernel calls
-            energy[get_group_id(0)] = shmem[0] / (double)((w*h) - (SQUARE_SIZE * SQUARE_SIZE));
-
-            //use atomics in case of multiple threads and single kernel call
-            //don't forget to zero output by the host
-            //double l_energy = shmem[0] / (double)(w*h);
-            //my_atomicAdd(energy, l_energy);
-        }
-
     }
+        
+    //store local sums in shared memory
+    shmem[ti] = sum;
+    barrier(CLK_LOCAL_MEM_FENCE);
+        
+    //reduce local sums
+    for (unsigned int s=block_size_x/2; s>0; s>>=1) {
+        if (ti < s) {
+            shmem[ti] += shmem[ti + s];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+        
+    //write result
+    if (ti == 0) {
+        energy[get_group_id(0)] = shmem[0] / (double)((w*h) - (SQUARE_SIZE * SQUARE_SIZE));
+    }
+
 }
-
-
- double my_atomicAdd(double* address, double val)
-{
-    unsigned long long int* address_as_ull =
-                              (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                        __double_as_longlong(val +
-                               __longlong_as_double(assumed)));
-
-    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
-    } while (assumed != old);
-
-    return __longlong_as_double(old);
-}
-
 
 
 /*
@@ -291,14 +255,14 @@ __kernel void sumDoubles(__global double *output, __global double *input, int n)
         
     //store local sums in shared memory
     shmem[ti] = sum;
-    barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+    barrier(CLK_LOCAL_MEM_FENCE);
         
     //reduce local sums
     for (unsigned int s=block_size_x/2; s>0; s>>=1) {
         if (ti < s) {
             shmem[ti] += shmem[ti + s];
         }
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
     }
         
     //write result
@@ -337,7 +301,7 @@ __kernel void maxlocFloats(__global int *output_loc, __global float *output_floa
     //store local variables in shared memory
     shmax[ti] = max;
     shind[ti] = loc;
-    barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+    barrier(CLK_LOCAL_MEM_FENCE);
         
     //reduce local variables
     for (unsigned int s=block_size_x/2; s>0; s>>=1) {
@@ -349,7 +313,7 @@ __kernel void maxlocFloats(__global int *output_loc, __global float *output_floa
                 shind[ti] = shind[ti + s];
             }
         }
-        barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+        barrier(CLK_LOCAL_MEM_FENCE);
     }
         
     //write result
@@ -359,4 +323,5 @@ __kernel void maxlocFloats(__global int *output_loc, __global float *output_floa
     }
 
 }
+
 
