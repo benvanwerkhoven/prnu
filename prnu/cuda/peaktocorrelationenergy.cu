@@ -22,6 +22,10 @@
  * @version 0.1
  */
 
+#ifndef block_size_y
+#define block_size_y 1
+#endif
+
 
 //function interfaces to prevent C++ garbling the kernel names
 extern "C" {
@@ -30,8 +34,7 @@ extern "C" {
     __global__ void toComplexAndFlip2(int h, int w, float* x, float* y, float* input_x, float *input_y);
     __global__ void computeEnergy(int h, int w, double *energy, int *peakIndex, float *input);
     __global__ void computeCrossCorr(int h, int w, float *c, float *x, float *y);
-    __global__ void findPeak(int h, int w, float *peakValue, float *peakValues, int *peakIndex, float *input);
-    __device__ double my_atomicAdd(double* address, double val);
+    __global__ void findPeak(int h, int w, float *peakValues, int *peakIndex, float *input);
 
     __global__ void sumDoubles(double *output, double *input, int n);
     __global__ void maxlocFloats(int *output_loc, float *output_float, int *input_loc, float *input_float, int n);
@@ -88,7 +91,6 @@ __global__ void toComplexAndFlip2(int h, int w, float *x, float *y, float *input
 }
 
 
-
 /*
  * This method computes a cross correlation in frequency space
  */
@@ -119,8 +121,8 @@ __global__ void computeCrossCorr(int h, int w, float *c, float *x, float *y) {
  */
 #ifndef block_size_x
 #define block_size_x 1024      //has to be a power of two because of reduce
-#define
-__global__ void findPeak(int h, int w, float *peakValue, float *peakValues, int *peakIndex, float *input) {
+#endif
+__global__ void findPeak(int h, int w, float *peakValues, int *peakIndex, float *input) {
 
     int x = blockIdx.x * block_size_x + threadIdx.x;
     int ti = threadIdx.x;
@@ -163,9 +165,6 @@ __global__ void findPeak(int h, int w, float *peakValue, float *peakValues, int 
     if (ti == 0) {
         peakValues[blockIdx.x] = shmax[0];
         peakIndex[blockIdx.x] = shind[0];
-        if (blockIdx.x == 0) {
-            peakValue[0] = input[n*2-2]; //instead of using real peak use last real value
-        }
     }
 
 }
@@ -196,10 +195,10 @@ __global__ void computeEnergy(int h, int w, double *energy, int *peakIndex, floa
     int peak_y = peak_i / w;
     int peak_x = peak_i - (peak_y * w);
 
-    if (ti < n) {
+    double sum = 0.0f;
 
+    if (ti < n) {
         //compute thread-local sums
-        double sum = 0.0f;
         for (int i=x; i < n; i+=step_size) {
             int row = i / w;
             int col = i - (row*w);
@@ -214,52 +213,26 @@ __global__ void computeEnergy(int h, int w, double *energy, int *peakIndex, floa
                 sum += val * val;
             }
         }
-        
-        //store local sums in shared memory
-        shmem[ti] = sum;
-        __syncthreads();
-        
-        //reduce local sums
-        for (unsigned int s=block_size_x/2; s>0; s>>=1) {
-            if (ti < s) {
-                shmem[ti] += shmem[ti + s];
-            }
-            __syncthreads();
-        }
-        
-        //write result
-        if (ti == 0) {
-            //use 1 thread block or multiple kernel calls
-            energy[blockIdx.x] = shmem[0] / (double)((w*h) - (SQUARE_SIZE * SQUARE_SIZE));
-
-            //use atomics in case of multiple threads and single kernel call
-            //don't forget to zero output by the host
-            //double l_energy = shmem[0] / (double)(w*h);
-            //my_atomicAdd(energy, l_energy);
-        }
-
     }
+        
+    //store local sums in shared memory
+    shmem[ti] = sum;
+    __syncthreads();
+        
+    //reduce local sums
+    for (unsigned int s=block_size_x/2; s>0; s>>=1) {
+        if (ti < s) {
+            shmem[ti] += shmem[ti + s];
+        }
+        __syncthreads();
+    }
+        
+    //write result
+    if (ti == 0) {
+        energy[blockIdx.x] = shmem[0] / (double)((w*h) - (SQUARE_SIZE * SQUARE_SIZE));
+    }
+
 }
-
-
-__device__ double my_atomicAdd(double* address, double val)
-{
-    unsigned long long int* address_as_ull =
-                              (unsigned long long int*)address;
-    unsigned long long int old = *address_as_ull, assumed;
-
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_ull, assumed,
-                        __double_as_longlong(val +
-                               __longlong_as_double(assumed)));
-
-    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
-    } while (assumed != old);
-
-    return __longlong_as_double(old);
-}
-
 
 
 /*
