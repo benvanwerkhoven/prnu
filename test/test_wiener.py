@@ -17,7 +17,7 @@ def test_wiener():
 
     height = np.int32(image.shape[0])
     width = np.int32(image.shape[1])
-    problem_size = (height, width)
+    problem_size = (width, height)
 
     output = np.zeros(problem_size, dtype=np.float32)
 

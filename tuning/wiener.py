@@ -19,7 +19,7 @@ def tune_wiener():
 
     height = np.int32(image.shape[0])
     width = np.int32(image.shape[1])
-    problem_size = (height, width)
+    problem_size = (width, height)
 
     output = np.zeros(problem_size, dtype=np.float32)
 
@@ -49,7 +49,7 @@ def tune_variance_zero_mean():
     size = np.int32(height*width)
 
     tune_params = OrderedDict()
-    tune_params["block_size_x"] = [2**i for i in range(5,11)]      
+    tune_params["block_size_x"] = [2**i for i in range(5,11)]
     tune_params["num_blocks"] = [2**i for i in range(5,11)]
 
     max_blocks = max(tune_params["num_blocks"])
@@ -62,5 +62,5 @@ def tune_variance_zero_mean():
 
 
 if __name__ == "__main__":
-    #tune_wiener()
+    tune_wiener()
     tune_variance_zero_mean()
