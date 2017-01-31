@@ -67,17 +67,18 @@ def test_find_peak():
     problem_size = ("num_blocks", 1)
     num_blocks = np.int32(params["num_blocks"])
 
+    peakval = np.zeros((1), dtype=np.float32)
     peakvals = np.zeros((num_blocks), dtype=np.float32)
     peakindx = np.zeros((num_blocks), dtype=np.int32)
     loc = np.zeros((1), dtype=np.int32)
     val = np.zeros((1), dtype=np.float32)
 
-    args = [height, width, peakvals, peakindx, crosscorr]
+    args = [height, width, peakval, peakvals, peakindx, crosscorr]
     output1 = run_kernel("findPeak",
         kernel_string, problem_size, args, params, grid_div_x=[])
 
-    peakvals = output1[2]
-    peakindx = output1[3]
+    peakvals = output1[3]
+    peakindx = output1[4]
 
     args = [loc, val, peakindx, peakvals, num_blocks]
     output2 = run_kernel("maxlocFloats",

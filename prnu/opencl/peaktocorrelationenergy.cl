@@ -22,8 +22,12 @@
  * @version 0.1
  */
 
+#ifndef block_size_x
+#define block_size_x 32
+#endif
+
 #ifndef block_size_y
-#define block_size_y 1
+#define block_size_y 16
 #endif
 
 
@@ -34,7 +38,7 @@ extern "C" {
     __kernel void toComplexAndFlip2(int h, int w, __global float* x, __global float* y, __global float* input_x, __global float *input_y);
     __kernel void computeEnergy(int h, int w, __global double *energy, __global int *peakIndex, __global float *input);
     __kernel void computeCrossCorr(int h, int w, __global float *c, __global float *x, __global float *y);
-    __kernel void findPeak(int h, int w, __global float *peakValues, __global int *peakIndex, __global float *input);
+    __kernel void findPeak(int h, int w, __global float *peakValue, __global float *peakValues, __global int *peakIndex, __global float *input);
 
     __kernel void sumDoubles(__global double *output, __global double *input, int n);
     __kernel void maxlocFloats(__global int *output_loc, __global float *output_float, __global int *input_loc, __global float *input_float, int n);
@@ -109,6 +113,14 @@ __kernel void computeCrossCorr(int h, int w, __global float *c, __global float *
 }
 
 
+/* ----------- kernels below this line are reducing kernels ------------ */
+#ifndef grid_size_x   //hack to check if kernel tuner is being used
+ #undef block_size_x
+ #define block_size_x 256
+#endif
+
+
+
 /* 
  * This method searches for the peak value in a cross correlated signal and outputs the index
  * input is assumed to be a complex array of which only the real component contains values that
@@ -119,10 +131,7 @@ __kernel void computeCrossCorr(int h, int w, __global float *c, __global float *
  * 
  * In case of multiple thread blocks initialize output to zero and use atomic add or another kernel
  */
-#ifndef block_size_x
-#define block_size_x 1024      //has to be a power of two because of reduce
-#endif
-__kernel void findPeak(int h, int w, __global float *peakValues, __global int *peakIndex, __global float *input) {
+__kernel void findPeak(int h, int w, __global float *peakValue, __global float *peakValues, __global int *peakIndex, __global float *input) {
 
     int x = get_group_id(0) * block_size_x + get_local_id(0);
     int ti = get_local_id(0);
@@ -142,7 +151,7 @@ __kernel void findPeak(int h, int w, __global float *peakValues, __global int *p
             index = i;
         }
     }
-        
+
     //store local sums in shared memory
     shmax[ti] = max;
     shind[ti] = index;
@@ -165,6 +174,9 @@ __kernel void findPeak(int h, int w, __global float *peakValues, __global int *p
     if (ti == 0) {
         peakValues[get_group_id(0)] = shmax[0];
         peakIndex[get_group_id(0)] = shind[0];
+        if (get_group_id(0) == 0) {
+            peakValue[0] = input[n*2-2]; //instead of using real peak use last real value
+        }
     }
 
 }

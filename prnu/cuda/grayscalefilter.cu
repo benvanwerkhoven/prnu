@@ -14,6 +14,14 @@
 * limitations under the License.
 */
 
+#ifndef block_size_x
+#define block_size_x 32
+#endif
+
+#ifndef block_size_y
+#define block_size_y 16
+#endif
+
 /**
  * This file contains the CUDA kernel for converting an image into
  * a grayscale array of floats. Scaling factors used are:

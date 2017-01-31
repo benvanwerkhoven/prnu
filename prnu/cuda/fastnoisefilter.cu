@@ -32,10 +32,10 @@
  */
 
 #ifndef block_size_x
-#define block_size_x 256
+#define block_size_x 32
 #endif
 #ifndef block_size_y
-#define block_size_y 1
+#define block_size_y 16
 #endif
 
  
@@ -183,10 +183,10 @@ __global__ void normalized_gradient(int h, int w, float *output, float *input) {
         float dx = horizontal_gradient(h,w,i,j,input);
         float dy = vertical_gradient(h,w,i,j,input);
 
-        float norm = sqrt((dx * dx) + (dy * dy));
+        float norm = sqrtf((dx * dx) + (dy * dy));
         float scale = 1.0f / (1.0f + norm);
     
-        output[i*w+j] = scale * dx + scale * dy;
+        output[i*w+j] = (scale * dx) + (scale * dy);
     }
 }
 

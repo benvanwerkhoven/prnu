@@ -18,8 +18,8 @@ def tune_zeromean():
     height = np.int32(image.shape[0])
     width = np.int32(image.shape[1])
 
-    #tune_vertical(kernel_string, image, height, width)
-    #tune_horizontal(kernel_string, image, height, width)
+    tune_vertical(kernel_string, image, height, width)
+    tune_horizontal(kernel_string, image, height, width)
     tune_transpose(kernel_string, image, height, width)
 
 

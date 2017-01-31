@@ -36,11 +36,15 @@
  */
 
 #ifndef block_size_x
-#define block_size_x 256
+#define block_size_x 32
 #endif
 
 #ifndef block_size_y
-#define block_size_y 1
+#define block_size_y 16
+#endif
+
+#ifndef reuse_computation
+#define reuse_computation 1
 #endif
 
 //set the number and size of filters, also adjust max_border
@@ -146,6 +150,7 @@ __global__ void normalize(int h, int w, float* complex_out, float* complex_in) {
         complex_out[i*w*2+2*j+1] = (complex_in[i*w*2+2*j+1] / (float)(w*h));
     }
 }
+
 /**
  * computeVarianceEstimates uses a number of simple filters to compute a minimum local variance
  *
@@ -155,12 +160,6 @@ __global__ void normalize(int h, int w, float* complex_out, float* complex_in) {
  * MAX_BORDER needs to be set accordingly.
  *
  */
-//#define block_size_x 32
-//#define block_size_y 16
-#ifndef reuse_computation
-#define reuse_computation 1
-#endif
-
 __global__ void computeVarianceEstimates(int h, int w, float* varest, float* input) {
     int ty = threadIdx.y;
     int tx = threadIdx.x;
@@ -297,6 +296,11 @@ __global__ void computeVarianceEstimates_naive(int h, int w, float* varest, floa
  *
  * block_size_x power of 2
  */
+
+#ifndef grid_size_x //hack to see if the Kernel Tuner is being used
+ #undef block_size_x
+ #define block_size_x 256
+#endif
 __global__ void computeVarianceZeroMean(int n, float *output, float *input) {
 
     int x = blockIdx.x * block_size_x + threadIdx.x;

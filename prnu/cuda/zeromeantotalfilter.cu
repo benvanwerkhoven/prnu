@@ -14,6 +14,14 @@
 * limitations under the License.
 */
 
+#ifndef block_size_x
+#define block_size_x 32
+#endif
+
+#ifndef block_size_y
+#define block_size_y 16
+#endif
+
 /**
  * This file contains CUDA kernels for applying a zero-mean total
  * filter to a PRNU pattern, as proposed by:

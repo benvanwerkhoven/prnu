@@ -30,11 +30,11 @@ def tune_wiener():
     tune_params["block_size_y"] = [2**i for i in range(6)]
 
     #first the naive kernel
-    tune_kernel("computeVarianceEstimates", kernel_string, problem_size, args, tune_params, grid_div_y=["block_size_y"])
+    #tune_kernel("computeVarianceEstimates_naive", kernel_string, problem_size, args, tune_params, grid_div_y=["block_size_y"])
 
     #more sophisticated kernel
     tune_params["reuse_computation"] = [0,1]
-    tune_kernel("computeVarianceEstimates_shared", kernel_string, problem_size, args, tune_params, grid_div_y=["block_size_y"])
+    tune_kernel("computeVarianceEstimates", kernel_string, problem_size, args, tune_params, grid_div_y=["block_size_y"])
 
 
 def tune_variance_zero_mean():
@@ -62,5 +62,5 @@ def tune_variance_zero_mean():
 
 
 if __name__ == "__main__":
-    tune_wiener()
+    #tune_wiener()
     tune_variance_zero_mean()
