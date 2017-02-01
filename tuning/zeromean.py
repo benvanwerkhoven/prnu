@@ -36,7 +36,7 @@ def tune_vertical(kernel_string, image, height, width):
     tune_params["block_size_x"] = [32*i for i in range(1,9)]
     tune_params["block_size_y"] = [2**i for i in range(6)]
 
-    tune_kernel("computeMeanVertically", kernel_string, problem_size, args, tune_params,
+    return tune_kernel("computeMeanVertically", kernel_string, problem_size, args, tune_params,
         grid_div_y=grid_div_y, grid_div_x=grid_div_x)
 
 def tune_horizontal(kernel_string, image, height, width):
@@ -51,7 +51,7 @@ def tune_horizontal(kernel_string, image, height, width):
     tune_params["block_size_x"] = [2**i for i in range(11)]
     tune_params["block_size_y"] = [2**i for i in range(6)]
 
-    tune_kernel("computeMeanHorizontally", kernel_string, problem_size, args, tune_params,
+    return tune_kernel("computeMeanHorizontally", kernel_string, problem_size, args, tune_params,
         grid_div_y=grid_div_y, grid_div_x=grid_div_x)
 
 def tune_transpose(kernel_string, image, height, width):
@@ -67,7 +67,7 @@ def tune_transpose(kernel_string, image, height, width):
     tune_params["block_size_x"] = [32*i for i in range(1,9)]
     tune_params["block_size_y"] = [2**i for i in range(6)]
 
-    tune_kernel("transpose", kernel_string, problem_size, args, tune_params,
+    return tune_kernel("transpose", kernel_string, problem_size, args, tune_params,
         grid_div_y=grid_div_y, grid_div_x=grid_div_x)
 
 
