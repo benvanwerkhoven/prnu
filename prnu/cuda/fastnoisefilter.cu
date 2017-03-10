@@ -45,8 +45,8 @@ extern "C" {
     __global__ void convolveHorizontally(int h, int w, float* output, float* input);
     __global__ void normalize(int h, int w, float* dxs, float* dys);
     __global__ void zeroMem(int h, int w, float* array);
-    __global__ void normalized_gradient(int h, int w, float *output, float *input);
-    __global__ void gradient(int h, int w, float *output, float *input);
+    __global__ void normalized_gradient(int h, int w, float *output1, float *output2, float *input);
+    __global__ void gradient(int h, int w, float *output, float *input1, float *input2);
 }
 
 /**
@@ -175,7 +175,7 @@ __device__ float vertical_gradient(int h, int w, int i, int j, float *input) {
     return res;
 }
 
-__global__ void normalized_gradient(int h, int w, float *output, float *input) {
+__global__ void normalized_gradient(int h, int w, float *output1, float *output2, float *input) {
     int i = threadIdx.y + blockIdx.y * block_size_y;
     int j = threadIdx.x + blockIdx.x * block_size_x;
 
@@ -186,17 +186,18 @@ __global__ void normalized_gradient(int h, int w, float *output, float *input) {
         float norm = sqrtf((dx * dx) + (dy * dy));
         float scale = 1.0f / (1.0f + norm);
     
-        output[i*w+j] = (scale * dx) + (scale * dy);
+        output1[i*w+j] = (scale * dx);
+        output2[i*w+j] = (scale * dy);
     }
 }
 
-__global__ void gradient(int h, int w, float *output, float *input) {
+__global__ void gradient(int h, int w, float *output, float *input1, float *input2) {
     int i = threadIdx.y + blockIdx.y * block_size_y;
     int j = threadIdx.x + blockIdx.x * block_size_x;
 
     if (i < h && j < w) {
-        float dx = horizontal_gradient(h,w,i,j,input);
-        float dy = vertical_gradient(h,w,i,j,input);
+        float dx = horizontal_gradient(h,w,i,j,input1);
+        float dy = vertical_gradient(h,w,i,j,input2);
 
         output[i*w+j] = dx + dy;
     }
